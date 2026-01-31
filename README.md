@@ -103,6 +103,26 @@ pnpm gateway:watch
 
 Note: `pnpm openclaw ...` runs TypeScript directly (via `tsx`). `pnpm build` produces `dist/` for running via Node / the packaged `openclaw` binary.
 
+## Syncing with upstream
+
+This repository is a fork of [openclaw/openclaw](https://github.com/openclaw/openclaw). To pull in updates from upstream:
+
+```bash
+# First time only: add the upstream remote
+git remote add upstream https://github.com/openclaw/openclaw.git
+
+# Fetch latest changes from upstream
+git fetch upstream
+
+# Merge upstream/main into your current branch (preserves history)
+git merge upstream/main
+
+# Push the merged commits to your fork
+git push origin main
+```
+
+If your branch has diverged (you have local commits not in upstream), you may need to resolve merge conflicts. Alternatively, use `git rebase upstream/main` for a linear history (but be careful if you've already pushed your commits).
+
 ## Security defaults (DM access)
 
 OpenClaw connects to real messaging surfaces. Treat inbound DMs as **untrusted input**.
