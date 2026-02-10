@@ -76,8 +76,8 @@ importers:
         specifier: ^7.13.0
         version: 7.13.0
       '@whiskeysockets/baileys':
-        specifier: 7.0.0-rc.9
-        version: 7.0.0-rc.9(audio-decode@2.2.3)(sharp@0.34.5)
+        specifier: 7.0.0-rc.8
+        version: 7.0.0-rc.8(audio-decode@2.2.3)(sharp@0.34.5)
       ajv:
         specifier: ^8.17.1
         version: 8.17.1
