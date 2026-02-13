@@ -6,6 +6,34 @@ ENV PATH="/root/.bun/bin:${PATH}"
 
 RUN corepack enable
 
+# Install Homebrew and spotify_player dependencies (as non-root user for Docker)
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    build-essential procps curl file git sudo \
+    libasound2-dev pkg-config libssl-dev libdbus-1-dev && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create linuxbrew user and install Homebrew
+RUN useradd -m -s /bin/bash linuxbrew && \
+    echo 'linuxbrew ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+USER linuxbrew
+WORKDIR /home/linuxbrew
+RUN NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+ENV PATH="/home/linuxbrew/.linuxbrew/bin:${PATH}"
+
+# Install Rust and required libraries via Homebrew
+RUN brew install rust alsa-lib dbus whisper-cpp
+
+# Install spotify_player via cargo with daemon feature
+ENV PKG_CONFIG_PATH="/home/linuxbrew/.linuxbrew/lib/pkgconfig:${PKG_CONFIG_PATH}"
+RUN cargo install spotify_player --features daemon
+
+# Switch back to root for remaining build steps
+USER root
+WORKDIR /app
+
 WORKDIR /app
 
 ARG OPENCLAW_DOCKER_APT_PACKAGES=""
@@ -38,6 +66,13 @@ RUN chown -R node:node /app
 # The node:22-bookworm image includes a 'node' user (uid 1000)
 # This reduces the attack surface by preventing container escape via root privileges
 USER node
+
+# Set up spotify-player config symlink (config file should exist in .openclaw/spotify-player/)
+RUN mkdir -p /home/node/.config && \
+    ln -s /home/node/.openclaw/spotify-player /home/node/.config/spotify-player
+
+# Expose ports
+EXPOSE 18789 18790 8989
 
 # Start gateway server with default config.
 # Binds to loopback (127.0.0.1) by default for security.
