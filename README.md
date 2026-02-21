@@ -71,6 +71,11 @@ openclaw message send --to +1234567890 --message "Hello from OpenClaw"
 
 # Talk to the assistant (optionally deliver back to any connected channel: WhatsApp/Telegram/Slack/Discord/Google Chat/Signal/iMessage/BlueBubbles/Microsoft Teams/Matrix/Zalo/Zalo Personal/WebChat)
 openclaw agent --message "Ship checklist" --thinking high
+
+Fix Whatsapp
+docker exec -it assistant-openclaw-gateway-1 node dist/index.js channels login
+docker compose restart openclaw-gateway
+
 ```
 
 Upgrading? [Updating guide](https://docs.openclaw.ai/install/updating) (and run `openclaw doctor`).
