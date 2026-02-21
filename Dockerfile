@@ -10,7 +10,7 @@ RUN corepack enable
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     build-essential procps curl file git sudo \
-    libasound2-dev pkg-config libssl-dev libdbus-1-dev && \
+    libasound2-dev pkg-config libssl-dev libdbus-1-dev ffmpeg && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
