@@ -28,7 +28,6 @@ RUN brew install rust alsa-lib dbus whisper-cpp
 
 # Install spotify_player via cargo with daemon feature
 ENV PKG_CONFIG_PATH="/home/linuxbrew/.linuxbrew/lib/pkgconfig:${PKG_CONFIG_PATH}"
-RUN cargo install spotify_player --features daemon
 
 # Switch back to root for remaining build steps
 USER root
@@ -51,7 +50,7 @@ COPY --chown=node:node patches ./patches
 COPY --chown=node:node scripts ./scripts
 
 USER node
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --no-frozen-lockfile
 
 # Optionally install Chromium and Xvfb for browser automation.
 # Build with: docker build --build-arg OPENCLAW_INSTALL_BROWSER=1 ...
