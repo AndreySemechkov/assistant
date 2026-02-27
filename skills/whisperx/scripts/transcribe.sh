@@ -64,20 +64,20 @@ check_quality() {
   echo "ok"
 }
 
-echo "▶ Running large-v3-turbo model..." >&2
-RESULT=$(run_whisper "$MODEL_LARGE")
+echo "▶ Running medium model..." >&2
+RESULT=$(run_whisper "$MODEL_MEDIUM")
 QUALITY=$(check_quality "$RESULT")
 
 if [[ "$QUALITY" == "low" ]]; then
-  echo "⚠ Low quality result, retrying with medium model..." >&2
-  MEDIUM_RESULT=$(run_whisper "$MODEL_MEDIUM")
-  MEDIUM_QUALITY=$(check_quality "$MEDIUM_RESULT")
+  echo "⚠ Low quality result, upgrading with large-v3-turbo model..." >&2
+  LARGE_RESULT=$(run_whisper "$MODEL_LARGE")
+  LARGE_QUALITY=$(check_quality "$LARGE_RESULT")
 
-  if [[ "$MEDIUM_QUALITY" == "ok" || $(echo "$MEDIUM_RESULT" | wc -w) -gt $(echo "$RESULT" | wc -w) ]]; then
-    echo "✓ Using medium model result" >&2
-    RESULT="$MEDIUM_RESULT"
+  if [[ "$LARGE_QUALITY" == "ok" || $(echo "$LARGE_RESULT" | wc -w) -gt $(echo "$RESULT" | wc -w) ]]; then
+    echo "✓ Using large model result" >&2
+    RESULT="$LARGE_RESULT"
   else
-    echo "✓ Using large model result (medium was not better)" >&2
+    echo "✓ Using medium model result (large was not better)" >&2
   fi
 fi
 
