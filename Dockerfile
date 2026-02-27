@@ -24,7 +24,7 @@ RUN NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.co
 ENV PATH="/home/linuxbrew/.linuxbrew/bin:${PATH}"
 
 # Install Rust and required libraries via Homebrew
-RUN brew install rust alsa-lib dbus whisper-cpp
+RUN brew install rust alsa-lib dbus whisper-cpp gogcli
 
 # Install spotify_player via cargo with daemon feature
 ENV PKG_CONFIG_PATH="/home/linuxbrew/.linuxbrew/lib/pkgconfig:${PKG_CONFIG_PATH}"
@@ -85,7 +85,8 @@ USER node
 
 # Set up spotify-player config symlink (config file should exist in .openclaw/spotify-player/)
 RUN mkdir -p /home/node/.config && \
-    ln -s /home/node/.openclaw/spotify-player /home/node/.config/spotify-player
+    ln -s /home/node/.openclaw/spotify-player /home/node/.config/spotify-player && \
+    ln -s /home/node/.openclaw/gogcli /home/node/.config/gogcli
 
 # Expose ports
 EXPOSE 18789 18790 8989

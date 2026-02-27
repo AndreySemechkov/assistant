@@ -1,12 +1,12 @@
 ---
 name: transcribe
-description: Local speech-to-text using whisper-cli. Tries large-v3-turbo first; falls back to medium if quality is low.
+description: Local speech-to-text using whisper-cli. Runs medium model first; upgrades to large-v3-turbo if quality is low.
 metadata: { "openclaw": { "emoji": "🎙️", "requires": { "bins": ["whisper-cli", "ffmpeg"] } } }
 ---
 
 # Transcribe (whisper-cli)
 
-Transcribes audio locally. Runs the large-v3-turbo model first. If the result has fewer than 3 words or more than 40% `[BLANK_AUDIO]` segments, retries with the medium model and picks the better output.
+Transcribes audio locally. Runs the medium model first for speed. If the result has fewer than 3 words or more than 40% `[BLANK_AUDIO]` segments, upgrades with the large-v3-turbo model and picks the better output.
 
 ## Quick start
 
@@ -23,8 +23,8 @@ Transcribes audio locally. Runs the large-v3-turbo model first. If the result ha
 
 ## Models
 
-- Primary: `ggml-large-v3-turbo.bin`
-- Fallback: `ggml-medium.bin`
+- Primary: `ggml-medium.bin`
+- Fallback: `ggml-large-v3-turbo.bin`
 - Both at: `/home/node/.openclaw/models/whisper/`
 
 ## Notes
