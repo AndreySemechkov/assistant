@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM node:22-bookworm@sha256:cd7bcd2e7a1e6f72052feb023c7f6b722205d3fcab7bbcbd2d1bfdab10b1e935
 
 # Install Bun (required for build scripts)
@@ -6,13 +7,13 @@ ENV PATH="/root/.bun/bin:${PATH}"
 
 RUN corepack enable
 
-# Install Homebrew and spotify_player dependencies (as non-root user for Docker)
-RUN apt-get update && \
+# Install system dependencies
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     build-essential procps curl file git sudo \
-    libasound2-dev pkg-config libssl-dev libdbus-1-dev ffmpeg && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    libasound2-dev pkg-config libssl-dev libdbus-1-dev ffmpeg
 
 # Create linuxbrew user and install Homebrew
 RUN useradd -m -s /bin/bash linuxbrew && \
@@ -29,28 +30,26 @@ RUN brew install rust alsa-lib dbus whisper-cpp gogcli
 # Install spotify_player via cargo with daemon feature
 ENV PKG_CONFIG_PATH="/home/linuxbrew/.linuxbrew/lib/pkgconfig:${PKG_CONFIG_PATH}"
 
-# Switch back to root for remaining build steps
 USER root
-WORKDIR /app
-
 WORKDIR /app
 RUN chown node:node /app
 
 ARG OPENCLAW_DOCKER_APT_PACKAGES=""
-RUN if [ -n "$OPENCLAW_DOCKER_APT_PACKAGES" ]; then \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    if [ -n "$OPENCLAW_DOCKER_APT_PACKAGES" ]; then \
       apt-get update && \
-      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $OPENCLAW_DOCKER_APT_PACKAGES && \
-      apt-get clean && \
-      rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*; \
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $OPENCLAW_DOCKER_APT_PACKAGES; \
     fi
 
+# Copy only dependency manifests — source files come after install for better cache reuse
 COPY --chown=node:node package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY --chown=node:node ui/package.json ./ui/package.json
 COPY --chown=node:node patches ./patches
-COPY --chown=node:node scripts ./scripts
 
 USER node
-RUN pnpm install --no-frozen-lockfile
+RUN --mount=type=cache,target=/home/node/.local/share/pnpm/store,uid=1000,gid=1000 \
+    pnpm install --no-frozen-lockfile
 
 # Optionally install Chromium and Xvfb for browser automation.
 # Build with: docker build --build-arg OPENCLAW_INSTALL_BROWSER=1 ...
@@ -58,17 +57,18 @@ RUN pnpm install --no-frozen-lockfile
 # Must run after pnpm install so playwright-core is available in node_modules.
 USER root
 ARG OPENCLAW_INSTALL_BROWSER=""
-RUN if [ -n "$OPENCLAW_INSTALL_BROWSER" ]; then \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    if [ -n "$OPENCLAW_INSTALL_BROWSER" ]; then \
       apt-get update && \
       DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb && \
       mkdir -p /home/node/.cache/ms-playwright && \
       PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright \
       node /app/node_modules/playwright-core/cli.js install --with-deps chromium && \
-      chown -R node:node /home/node/.cache/ms-playwright && \
-      apt-get clean && \
-      rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*; \
+      chown -R node:node /home/node/.cache/ms-playwright; \
     fi
 
+# Copy source files and build
 USER node
 COPY --chown=node:node . .
 RUN pnpm build
@@ -78,9 +78,6 @@ RUN pnpm ui:build
 
 ENV NODE_ENV=production
 
-# Security hardening: Run as non-root user
-# The node:22-bookworm image includes a 'node' user (uid 1000)
-# This reduces the attack surface by preventing container escape via root privileges
 USER node
 
 # Set up spotify-player config symlink (config file should exist in .openclaw/spotify-player/)
