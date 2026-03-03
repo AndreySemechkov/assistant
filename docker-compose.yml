@@ -1,6 +1,6 @@
 services:
   openclaw-gateway:
-    image: ${OPENCLAW_IMAGE:-openclaw:v4}
+    image: ${OPENCLAW_IMAGE:-openclaw:v5}
     pull_policy: never
     environment:
       HOME: /home/node
@@ -10,6 +10,7 @@ services:
       CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY}
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE}
+      ELEVENLABS_CREDENTIALS_FILE: /home/node/.openclaw/credentials/eleven
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
@@ -31,7 +32,7 @@ services:
       ]
 
   openclaw-cli:
-    image: ${OPENCLAW_IMAGE:-openclaw:v4}
+    image: ${OPENCLAW_IMAGE:-openclaw:v5}
     pull_policy: never
     environment:
       HOME: /home/node
