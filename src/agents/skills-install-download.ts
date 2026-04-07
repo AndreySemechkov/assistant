@@ -5,6 +5,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { isWindowsDrivePath } from "../infra/archive-path.js";
+import { formatErrorMessage } from "../infra/errors.js";
 import { writeFileFromPathWithinRoot } from "../infra/fs-safe.js";
 import { assertCanonicalPathWithinBase } from "../infra/install-safe-path.js";
 import { fetchWithSsrFGuard } from "../infra/net/fetch-guard.js";
@@ -130,22 +131,33 @@ export async function installDownloadSpec(params: {
     filename = "download";
   }
 
+  let canonicalSafeRoot = "";
   let targetDir = "";
   try {
-    targetDir = resolveDownloadTargetDir(entry, spec);
-    await ensureDir(targetDir);
+    await ensureDir(safeRoot);
     await assertCanonicalPathWithinBase({
       baseDir: safeRoot,
-      candidatePath: targetDir,
+      candidatePath: safeRoot,
       boundaryLabel: "skill tools directory",
     });
+    canonicalSafeRoot = await fs.promises.realpath(safeRoot);
+
+    const requestedTargetDir = resolveDownloadTargetDir(entry, spec);
+    await ensureDir(requestedTargetDir);
+    await assertCanonicalPathWithinBase({
+      baseDir: safeRoot,
+      candidatePath: requestedTargetDir,
+      boundaryLabel: "skill tools directory",
+    });
+    const targetRelativePath = path.relative(safeRoot, requestedTargetDir);
+    targetDir = path.join(canonicalSafeRoot, targetRelativePath);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = formatErrorMessage(err);
     return { ok: false, message, stdout: "", stderr: message, code: null };
   }
 
   const archivePath = path.join(targetDir, filename);
-  const archiveRelativePath = path.relative(safeRoot, archivePath);
+  const archiveRelativePath = path.relative(canonicalSafeRoot, archivePath);
   if (
     !archiveRelativePath ||
     archiveRelativePath === ".." ||
@@ -164,13 +176,13 @@ export async function installDownloadSpec(params: {
   try {
     const result = await downloadFile({
       url,
-      rootDir: safeRoot,
+      rootDir: canonicalSafeRoot,
       relativePath: archiveRelativePath,
       timeoutMs,
     });
     downloaded = result.bytes;
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = formatErrorMessage(err);
     return { ok: false, message, stdout: "", stderr: message, code: null };
   }
 
@@ -198,12 +210,12 @@ export async function installDownloadSpec(params: {
 
   try {
     await assertCanonicalPathWithinBase({
-      baseDir: safeRoot,
+      baseDir: canonicalSafeRoot,
       candidatePath: targetDir,
       boundaryLabel: "skill tools directory",
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = formatErrorMessage(err);
     return { ok: false, message, stdout: "", stderr: message, code: null };
   }
 

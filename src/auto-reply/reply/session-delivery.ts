@@ -1,6 +1,7 @@
 import type { SessionEntry } from "../../config/sessions.js";
 import { buildAgentMainSessionKey } from "../../routing/session-key.js";
 import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import {
   deliveryContextFromSession,
   deliveryContextKey,
@@ -23,7 +24,7 @@ function resolveSessionKeyChannelHint(sessionKey?: string): string | undefined {
   if (!parsed?.rest) {
     return undefined;
   }
-  const head = parsed.rest.split(":")[0]?.trim().toLowerCase();
+  const head = normalizeOptionalString(parsed.rest.split(":")[0])?.toLowerCase();
   if (!head || head === "main" || head === "cron" || head === "subagent" || head === "acp") {
     return undefined;
   }
@@ -38,6 +39,50 @@ function isMainSessionKey(sessionKey?: string): boolean {
   return parsed.rest.trim().toLowerCase() === "main";
 }
 
+const DIRECT_SESSION_MARKERS = new Set(["direct", "dm"]);
+const THREAD_SESSION_MARKERS = new Set(["thread", "topic"]);
+
+function hasStrictDirectSessionTail(parts: string[], markerIndex: number): boolean {
+  const peerId = normalizeOptionalString(parts[markerIndex + 1]);
+  if (!peerId) {
+    return false;
+  }
+  const tail = parts.slice(markerIndex + 2);
+  if (tail.length === 0) {
+    return true;
+  }
+  return (
+    tail.length === 2 &&
+    THREAD_SESSION_MARKERS.has(tail[0] ?? "") &&
+    Boolean(normalizeOptionalString(tail[1]))
+  );
+}
+
+function isDirectSessionKey(sessionKey?: string): boolean {
+  const raw = (sessionKey ?? "").trim().toLowerCase();
+  if (!raw) {
+    return false;
+  }
+  const scoped = parseAgentSessionKey(raw)?.rest ?? raw;
+  const parts = scoped.split(":").filter(Boolean);
+  if (parts.length < 2) {
+    return false;
+  }
+  if (DIRECT_SESSION_MARKERS.has(parts[0] ?? "")) {
+    return hasStrictDirectSessionTail(parts, 0);
+  }
+  const channel = normalizeMessageChannel(parts[0]);
+  if (!channel || !isDeliverableMessageChannel(channel)) {
+    return false;
+  }
+  if (DIRECT_SESSION_MARKERS.has(parts[1] ?? "")) {
+    return hasStrictDirectSessionTail(parts, 1);
+  }
+  return Boolean(normalizeOptionalString(parts[1])) && DIRECT_SESSION_MARKERS.has(parts[2] ?? "")
+    ? hasStrictDirectSessionTail(parts, 2)
+    : false;
+}
+
 function isExternalRoutingChannel(channel?: string): channel is string {
   return Boolean(
     channel && channel !== INTERNAL_MESSAGE_CHANNEL && isDeliverableMessageChannel(channel),
@@ -50,11 +95,23 @@ export function resolveLastChannelRaw(params: {
   sessionKey?: string;
 }): string | undefined {
   const originatingChannel = normalizeMessageChannel(params.originatingChannelRaw);
-  if (originatingChannel === INTERNAL_MESSAGE_CHANNEL && isMainSessionKey(params.sessionKey)) {
-    return params.originatingChannelRaw;
-  }
+  // WebChat should own reply routing for direct-session UI turns, but only when
+  // the session has no established external delivery route. If the session was
+  // created via an external channel (e.g. Telegram, iMessage), webchat/dashboard
+  // access must not overwrite the persisted route — doing so causes subagent
+  // completion events to be delivered to the dashboard instead of the original
+  // channel. See: https://github.com/openclaw/openclaw/issues/47745
   const persistedChannel = normalizeMessageChannel(params.persistedLastChannel);
   const sessionKeyChannelHint = resolveSessionKeyChannelHint(params.sessionKey);
+  const hasEstablishedExternalRoute =
+    isExternalRoutingChannel(persistedChannel) || isExternalRoutingChannel(sessionKeyChannelHint);
+  if (
+    originatingChannel === INTERNAL_MESSAGE_CHANNEL &&
+    !hasEstablishedExternalRoute &&
+    (isMainSessionKey(params.sessionKey) || isDirectSessionKey(params.sessionKey))
+  ) {
+    return params.originatingChannelRaw;
+  }
   let resolved = params.originatingChannelRaw || params.persistedLastChannel;
   // Internal/non-deliverable sources should not overwrite previously known
   // external delivery routes (or explicit channel hints from the session key).
@@ -77,12 +134,17 @@ export function resolveLastToRaw(params: {
   sessionKey?: string;
 }): string | undefined {
   const originatingChannel = normalizeMessageChannel(params.originatingChannelRaw);
-  if (originatingChannel === INTERNAL_MESSAGE_CHANNEL && isMainSessionKey(params.sessionKey)) {
-    return params.originatingToRaw || params.toRaw;
-  }
   const persistedChannel = normalizeMessageChannel(params.persistedLastChannel);
   const sessionKeyChannelHint = resolveSessionKeyChannelHint(params.sessionKey);
-
+  const hasEstablishedExternalRouteForTo =
+    isExternalRoutingChannel(persistedChannel) || isExternalRoutingChannel(sessionKeyChannelHint);
+  if (
+    originatingChannel === INTERNAL_MESSAGE_CHANNEL &&
+    !hasEstablishedExternalRouteForTo &&
+    (isMainSessionKey(params.sessionKey) || isDirectSessionKey(params.sessionKey))
+  ) {
+    return params.originatingToRaw || params.toRaw;
+  }
   // When the turn originates from an internal/non-deliverable source, do not
   // replace an established external destination with internal routing ids
   // (e.g., session/webchat ids).

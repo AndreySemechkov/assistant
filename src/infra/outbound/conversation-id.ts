@@ -1,9 +1,16 @@
+import { normalizeOptionalString } from "../../shared/string-coerce.js";
+
 function normalizeConversationId(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
+  return normalizeOptionalString(value);
+}
+
+function resolveExplicitConversationTargetId(target: string): string | undefined {
+  for (const prefix of ["channel:", "conversation:", "group:", "room:", "dm:"]) {
+    if (target.toLowerCase().startsWith(prefix)) {
+      return normalizeConversationId(target.slice(prefix.length));
+    }
   }
-  const trimmed = value.trim();
-  return trimmed || undefined;
+  return undefined;
 }
 
 export function resolveConversationIdFromTargets(params: {
@@ -21,11 +28,11 @@ export function resolveConversationIdFromTargets(params: {
     if (!target) {
       continue;
     }
-    if (target.startsWith("channel:")) {
-      const channelId = normalizeConversationId(target.slice("channel:".length));
-      if (channelId) {
-        return channelId;
-      }
+    const explicitConversationId = resolveExplicitConversationTargetId(target);
+    if (explicitConversationId) {
+      return explicitConversationId;
+    }
+    if (target.includes(":") && explicitConversationId === undefined) {
       continue;
     }
     const mentionMatch = target.match(/^<#(\d+)>$/);

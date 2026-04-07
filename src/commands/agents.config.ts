@@ -10,8 +10,10 @@ import {
   loadAgentIdentityFromWorkspace,
   parseIdentityMarkdown as parseIdentityMarkdownFile,
 } from "../agents/identity-file.js";
+import { listRouteBindings } from "../config/bindings.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { normalizeAgentId } from "../routing/session-key.js";
+import { normalizeOptionalString } from "../shared/string-coerce.js";
 
 export type AgentSummary = {
   id: string;
@@ -43,7 +45,7 @@ function resolveAgentName(cfg: OpenClawConfig, agentId: string) {
   const entry = listAgentEntries(cfg).find(
     (agent) => normalizeAgentId(agent.id) === normalizeAgentId(agentId),
   );
-  return entry?.name?.trim() || undefined;
+  return normalizeOptionalString(entry?.name);
 }
 
 function resolveAgentModel(cfg: OpenClawConfig, agentId: string) {
@@ -55,7 +57,7 @@ function resolveAgentModel(cfg: OpenClawConfig, agentId: string) {
       return entry.model.trim();
     }
     if (typeof entry.model === "object") {
-      const primary = entry.model.primary?.trim();
+      const primary = normalizeOptionalString(entry.model.primary);
       if (primary) {
         return primary;
       }
@@ -65,7 +67,7 @@ function resolveAgentModel(cfg: OpenClawConfig, agentId: string) {
   if (typeof raw === "string") {
     return raw;
   }
-  return raw?.primary?.trim() || undefined;
+  return normalizeOptionalString(raw?.primary);
 }
 
 export function parseIdentityMarkdown(content: string): AgentIdentity {
@@ -88,7 +90,7 @@ export function buildAgentSummaries(cfg: OpenClawConfig): AgentSummary[] {
       ? configuredAgents.map((agent) => normalizeAgentId(agent.id))
       : [defaultAgentId];
   const bindingCounts = new Map<string, number>();
-  for (const binding of cfg.bindings ?? []) {
+  for (const binding of listRouteBindings(cfg)) {
     const agentId = normalizeAgentId(binding.agentId);
     bindingCounts.set(agentId, (bindingCounts.get(agentId) ?? 0) + 1);
   }
