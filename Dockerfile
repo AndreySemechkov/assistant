@@ -172,7 +172,7 @@ RUN NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.co
 ENV PATH="/home/linuxbrew/.linuxbrew/bin:${PATH}"
 
 # Install Rust and required libraries via Homebrew.
-RUN brew install rust alsa-lib dbus whisper-cpp gogcli
+RUN brew install rust alsa-lib dbus whisper-cpp gogcli spotify_player
 
 ENV PKG_CONFIG_PATH="/home/linuxbrew/.linuxbrew/lib/pkgconfig:${PKG_CONFIG_PATH}"
 
