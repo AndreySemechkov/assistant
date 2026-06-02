@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Transcription script: Agentspeak server (primary), ElevenLabs direct API (fallback).
-// Usage: node --import tsx transcribe.ts <audio-file-path>
+// Usage: tsx transcribe.ts <audio-file-path>
 
 import { existsSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";

@@ -181,6 +181,9 @@ WORKDIR /app
 
 RUN chown node:node /app
 
+# Install Codex CLI in the runtime image for local CLI-backend usage.
+RUN npm install -g @openai/codex
+
 COPY --from=runtime-assets --chown=node:node /app/dist ./dist
 COPY --from=runtime-assets --chown=node:node /app/node_modules ./node_modules
 COPY --from=runtime-assets --chown=node:node /app/package.json .
