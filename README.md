@@ -55,6 +55,12 @@ openclaw onboard --install-daemon
 
 The wizard installs the Gateway daemon (launchd/systemd user service) so it stays running.
 
+## Auth
+
+```bash
+docker exec -it assistant-openclaw-gateway-1 /home/linuxbrew/.linuxbrew/bin/gog auth add <EMAIL> --services gmail,calendar,drive --manual
+```
+
 ## Quick start (TL;DR)
 
 Runtime: **Node ≥22**.
@@ -79,6 +85,8 @@ docker compose restart openclaw-gateway
 ```
 
 Upgrading? [Updating guide](https://docs.openclaw.ai/install/updating) (and run `openclaw doctor`).
+
+If config gets messed up in the Docker setup, run `docker compose run --rm openclaw-cli doctor --fix`.
 
 ## Development channels
 

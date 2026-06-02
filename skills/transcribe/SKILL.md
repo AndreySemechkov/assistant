@@ -11,7 +11,7 @@ Primary voice transcription using ElevenLabs Scribe v2 cloud API. Language: Hebr
 ## Usage
 
 ```bash
-node --import tsx {baseDir}/scripts/transcribe.ts /path/to/audio.ogg
+node {baseDir}/scripts/run-transcribe.mjs /path/to/audio.ogg
 ```
 
 ## Fallback
