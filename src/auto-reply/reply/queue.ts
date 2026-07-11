@@ -1,3 +1,4 @@
+/** Public queue API for deferred auto-reply follow-up runs. */
 export { extractQueueDirective } from "./queue/directive.js";
 export { clearSessionQueues } from "./queue/cleanup.js";
 export type { ClearSessionQueueResult } from "./queue/cleanup.js";
@@ -7,12 +8,17 @@ export {
   getFollowupQueueDepth,
   resetRecentQueuedMessageIdDedupe,
 } from "./queue/enqueue.js";
-export { resolveQueueSettings } from "./queue/settings.js";
+export { resolveQueueSettings } from "./queue/settings-runtime.js";
 export { clearFollowupQueue, refreshQueuedFollowupSession } from "./queue/state.js";
 export type {
+  EnqueueFollowupRunOptions,
   FollowupRun,
   QueueDedupeMode,
+  QueueInsertPosition,
   QueueDropPolicy,
   QueueMode,
   QueueSettings,
 } from "./queue/types.js";
+export { isFollowupRunAborted } from "./queue/types.js";
+export { admitFollowupRunLifecycle, completeFollowupRunLifecycle } from "./queue/types.js";
+export { FollowupRunDeferredError, isFollowupRunDeferredError } from "./queue/types.js";

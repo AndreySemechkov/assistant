@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { resolveSecretRefValues } from "../../../src/secrets/resolve.js";
+// Googlechat tests cover secret contract plugin behavior.
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import {
   applyResolvedAssignments,
   createResolverContext,
-} from "../../../src/secrets/runtime-shared.js";
+  resolveSecretRefValues,
+} from "openclaw/plugin-sdk/secret-ref-runtime";
+import { describe, expect, it } from "vitest";
 import { collectRuntimeConfigAssignments } from "./secret-contract.js";
 
 describe("googlechat secret contract", () => {
@@ -24,8 +26,8 @@ describe("googlechat secret contract", () => {
           },
         },
       },
-    };
-    const resolvedConfig = structuredClone(sourceConfig);
+    } satisfies OpenClawConfig;
+    const resolvedConfig: OpenClawConfig = structuredClone(sourceConfig);
     const context = createResolverContext({
       sourceConfig,
       env: {
@@ -52,9 +54,8 @@ describe("googlechat secret contract", () => {
       resolved,
     });
 
-    expect(resolvedConfig.channels.googlechat.accounts.work.serviceAccount).toBe(
-      '{"client_email":"bot@example.com"}',
-    );
-    expect(context.warnings).toEqual([]);
+    const workAccount = resolvedConfig.channels?.googlechat?.accounts?.work;
+    expect(workAccount?.serviceAccount).toBe('{"client_email":"bot@example.com"}');
+    expect(context.warnings).toStrictEqual([]);
   });
 });

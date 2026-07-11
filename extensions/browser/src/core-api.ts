@@ -1,3 +1,7 @@
+/**
+ * Browser plugin internal barrel that gathers runtime, SDK, CLI, and gateway
+ * APIs for modules that need a stable local import surface.
+ */
 export {
   DEFAULT_AI_SNAPSHOT_MAX_CHARS,
   DEFAULT_UPLOAD_DIR,
@@ -9,11 +13,14 @@ export {
   browserCreateProfile,
   browserConsoleMessages,
   browserDeleteProfile,
+  browserDoctor,
+  browserImportProfile,
   browserFocusTab,
   browserNavigate,
   browserOpenTab,
   browserPdfSave,
   browserProfiles,
+  browserSystemProfiles,
   browserResetProfile,
   browserScreenshotAction,
   browserSnapshot,
@@ -29,6 +36,8 @@ export {
   ensureBrowserControlAuth,
   getBrowserControlState,
   getBrowserProfileCapabilities,
+  isBrowserHostLocalRoute,
+  isBrowserSystemProfileImport,
   isPersistentBrowserProfileMutation,
   installBrowserAuthMiddleware,
   installBrowserCommonMiddleware,
@@ -41,6 +50,7 @@ export {
   resolveBrowserConfig,
   resolveBrowserControlAuth,
   resolveExistingPathsWithinRoot,
+  resolveExistingUploadPaths,
   resolveProfile,
   resolveRequestedBrowserProfile,
   startBrowserControlServiceFromConfig,
@@ -52,6 +62,9 @@ export {
 export type {
   BrowserCreateProfileResult,
   BrowserDeleteProfileResult,
+  BrowserDoctorCheck,
+  BrowserDoctorReport,
+  BrowserImportProfileResult,
   BrowserFormField,
   BrowserResetProfileResult,
   BrowserRouteRegistrar,
@@ -60,6 +73,7 @@ export type {
   BrowserTab,
   BrowserTransport,
   ProfileStatus,
+  SystemProfileInfo,
   SnapshotResult,
 } from "./browser-runtime.js";
 export {
@@ -80,14 +94,14 @@ export {
   selectDefaultNodeFromList,
   stringEnum,
   theme,
-} from "openclaw/plugin-sdk/browser-setup-tools";
+} from "./sdk-setup-tools.js";
 export {
-  loadConfig,
+  getRuntimeConfig,
   normalizePluginsConfig,
   parseBooleanValue,
   resolveEffectiveEnableState,
   shortenHomePath,
-} from "openclaw/plugin-sdk/browser-config-runtime";
+} from "./sdk-config.js";
 export {
   addGatewayClientOptions,
   callGatewayFromCli,
@@ -100,16 +114,13 @@ export {
   runCommandWithRuntime,
   safeParseJson,
   withTimeout,
-} from "openclaw/plugin-sdk/browser-node-runtime";
-export {
-  createSubsystemLogger,
-  wrapExternalContent,
-} from "openclaw/plugin-sdk/browser-security-runtime";
-export type { AnyAgentTool, NodeListNode } from "openclaw/plugin-sdk/browser-setup-tools";
-export type { OpenClawConfig } from "openclaw/plugin-sdk/browser-config-runtime";
+} from "./sdk-node-runtime.js";
+export { createSubsystemLogger, wrapExternalContent } from "./sdk-security-runtime.js";
+export type { AnyAgentTool, NodeListNode } from "./sdk-setup-tools.js";
+export type { OpenClawConfig } from "./sdk-config.js";
 export type {
   GatewayRequestHandlers,
   GatewayRpcOpts,
   NodeSession,
   OpenClawPluginService,
-} from "openclaw/plugin-sdk/browser-node-runtime";
+} from "./sdk-node-runtime.js";

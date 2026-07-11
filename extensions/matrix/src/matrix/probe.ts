@@ -1,19 +1,17 @@
-import { formatErrorMessage, type PinnedDispatcherPolicy } from "openclaw/plugin-sdk/infra-runtime";
-import { normalizeOptionalString } from "openclaw/plugin-sdk/text-runtime";
+// Matrix plugin module implements probe behavior.
+import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
+import { createLazyRuntimeModule } from "openclaw/plugin-sdk/lazy-runtime";
+import type { PinnedDispatcherPolicy } from "openclaw/plugin-sdk/ssrf-dispatcher";
+import { normalizeOptionalString } from "openclaw/plugin-sdk/string-coerce-runtime";
 import type { SsrFPolicy } from "../runtime-api.js";
 import type { BaseProbeResult } from "../runtime-api.js";
 import { isBunRuntime } from "./client/runtime.js";
 
-type MatrixProbeRuntimeDeps = Pick<typeof import("./probe.runtime.js"), "createMatrixClient">;
-
-let matrixProbeRuntimeDepsPromise: Promise<MatrixProbeRuntimeDeps> | undefined;
-
-async function loadMatrixProbeRuntimeDeps(): Promise<MatrixProbeRuntimeDeps> {
-  matrixProbeRuntimeDepsPromise ??= import("./probe.runtime.js").then((runtimeModule) => ({
+const loadMatrixProbeRuntimeDeps = createLazyRuntimeModule(() =>
+  import("./probe.runtime.js").then((runtimeModule) => ({
     createMatrixClient: runtimeModule.createMatrixClient,
-  }));
-  return await matrixProbeRuntimeDepsPromise;
-}
+  })),
+);
 
 export type MatrixProbe = BaseProbeResult & {
   status?: number | null;
@@ -26,7 +24,7 @@ export async function probeMatrix(params: {
   accessToken: string;
   userId?: string;
   deviceId?: string;
-  timeoutMs: number;
+  timeoutMs?: number;
   accountId?: string | null;
   allowPrivateNetwork?: boolean;
   ssrfPolicy?: SsrFPolicy;

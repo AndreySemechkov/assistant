@@ -16,6 +16,7 @@ struct ConnectOptions {
     var displayName: String?
     var role: String = "operator"
     var scopes: [String] = defaultOperatorConnectScopes
+    var scopesAreExplicit: Bool = false
     var help: Bool = false
 
     static func parse(_ args: [String]) -> ConnectOptions {
@@ -43,6 +44,7 @@ struct ConnectOptions {
             "--scopes": { opts, raw in
                 opts.scopes = raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                     .filter { !$0.isEmpty }
+                opts.scopesAreExplicit = true
             },
         ]
         var i = 0
@@ -78,14 +80,55 @@ struct ConnectOutput: Encodable {
 }
 
 actor SnapshotStore {
-    private var value: HelloOk?
+    private var value: (snapshot: HelloOk, generation: UInt64)?
+    // The channel awaits retirement before reconnecting. Keep that socket epoch
+    // so a queued old callback cannot overwrite the replacement snapshot.
+    private var activeGeneration: UInt64?
+    private var lastRetiredGeneration: UInt64?
 
-    func set(_ snapshot: HelloOk) {
-        self.value = snapshot
+    func set(_ snapshot: HelloOk, generation: UInt64) {
+        guard self.admitGeneration(generation) else { return }
+        self.value = (snapshot, generation)
+    }
+
+    func retire(generation: UInt64) {
+        guard self.retireGeneration(generation) else { return }
+        if self.value?.generation == generation {
+            self.value = nil
+        }
     }
 
     func get() -> HelloOk? {
-        self.value
+        self.value?.snapshot
+    }
+
+    private func admitGeneration(_ generation: UInt64) -> Bool {
+        if let lastRetiredGeneration,
+           generation <= lastRetiredGeneration
+        {
+            return false
+        }
+        if let activeGeneration {
+            return generation == activeGeneration
+        }
+        self.activeGeneration = generation
+        return true
+    }
+
+    private func retireGeneration(_ generation: UInt64) -> Bool {
+        if let lastRetiredGeneration,
+           generation <= lastRetiredGeneration
+        {
+            return false
+        }
+        if let activeGeneration,
+           generation != activeGeneration
+        {
+            return false
+        }
+        self.activeGeneration = nil
+        self.lastRetiredGeneration = generation
+        return true
     }
 }
 
@@ -126,6 +169,7 @@ func runConnect(_ args: [String]) async {
         let connectOptions = GatewayConnectOptions(
             role: opts.role,
             scopes: opts.scopes,
+            scopesAreExplicit: opts.scopesAreExplicit,
             caps: [],
             commands: [],
             permissions: [:],
@@ -138,12 +182,15 @@ func runConnect(_ args: [String]) async {
             url: endpoint.url,
             token: endpoint.token,
             password: endpoint.password,
-            pushHandler: { push in
+            pushHandler: { push, socketGeneration in
                 if case let .snapshot(ok) = push {
-                    await snapshotStore.set(ok)
+                    await snapshotStore.set(ok, generation: socketGeneration)
                 }
             },
-            connectOptions: connectOptions)
+            connectOptions: connectOptions,
+            disconnectHandler: { _, socketGeneration in
+                await snapshotStore.retire(generation: socketGeneration)
+            })
 
         let params: [String: KitAnyCodable]? = opts.probe ? ["probe": KitAnyCodable(true)] : nil
         let data = try await channel.request(

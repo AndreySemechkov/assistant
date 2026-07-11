@@ -1,6 +1,26 @@
-import type { MatrixEvent } from "matrix-js-sdk";
+// Matrix tests cover event helpers plugin behavior.
+import type { MatrixEvent } from "matrix-js-sdk/lib/matrix.js";
 import { describe, expect, it } from "vitest";
 import { buildHttpError, matrixEventToRaw, parseMxc } from "./event-helpers.js";
+
+const makeEditedMessageEvent = (): MatrixEvent =>
+  ({
+    getId: () => "$root",
+    getSender: () => "@alice:example.org",
+    getType: () => "m.room.message",
+    getTs: () => 1000,
+    getOriginalContent: () => ({ body: "original", msgtype: "m.text" }),
+    getContent: () => ({
+      body: "@bot edited",
+      "m.mentions": { user_ids: ["@bot:example.org"] },
+      msgtype: "m.text",
+    }),
+    getUnsigned: () => ({
+      "m.relations": {
+        "m.replace": { event_id: "$edit" },
+      },
+    }),
+  }) as unknown as MatrixEvent;
 
 describe("event-helpers", () => {
   it("parses mxc URIs", () => {
@@ -19,6 +39,14 @@ describe("event-helpers", () => {
     const fromText = buildHttpError(500, "internal failure");
     expect(fromText.message).toBe("internal failure");
     expect(fromText.statusCode).toBe(500);
+  });
+
+  it("keeps truncated HTTP error bodies UTF-16 safe", () => {
+    const parsedPrefix = `{"detail":"${"a".repeat(488)}`;
+    const invalidPrefix = `not-json ${"b".repeat(490)}`;
+
+    expect(buildHttpError(500, `${parsedPrefix}😀"}`).message).toBe(parsedPrefix);
+    expect(buildHttpError(502, `${invalidPrefix}🎉tail`).message).toBe(invalidPrefix);
   });
 
   it("serializes Matrix events and resolves state key from available sources", () => {
@@ -56,5 +84,92 @@ describe("event-helpers", () => {
       event: { state_key: "@carol:example.org" },
     } as unknown as MatrixEvent;
     expect(matrixEventToRaw(viaRaw).state_key).toBe("@carol:example.org");
+  });
+
+  it("serializes current content by default for read APIs", () => {
+    expect(matrixEventToRaw(makeEditedMessageEvent())).toEqual({
+      event_id: "$root",
+      sender: "@alice:example.org",
+      type: "m.room.message",
+      origin_server_ts: 1000,
+      content: {
+        body: "@bot edited",
+        "m.mentions": { user_ids: ["@bot:example.org"] },
+        msgtype: "m.text",
+      },
+      unsigned: {
+        "m.relations": {
+          "m.replace": { event_id: "$edit" },
+        },
+      },
+    });
+  });
+
+  it("preserves original thread relation when serializing edited current content", () => {
+    const event = {
+      getId: () => "$root",
+      getSender: () => "@alice:example.org",
+      getType: () => "m.room.message",
+      getTs: () => 1000,
+      getOriginalContent: () => ({
+        body: "original",
+        msgtype: "m.text",
+        "m.relates_to": {
+          rel_type: "m.thread",
+          event_id: "$thread",
+        },
+      }),
+      getContent: () => ({
+        body: "@bot edited",
+        "m.mentions": { user_ids: ["@bot:example.org"] },
+        msgtype: "m.text",
+      }),
+      getUnsigned: () => ({}),
+    } as unknown as MatrixEvent;
+
+    expect(matrixEventToRaw(event).content["m.relates_to"]).toEqual({
+      rel_type: "m.thread",
+      event_id: "$thread",
+    });
+  });
+
+  it("preserves wire thread relation for decrypted encrypted events", () => {
+    const event = {
+      getId: () => "$encrypted",
+      getSender: () => "@alice:example.org",
+      getType: () => "m.room.message",
+      getTs: () => 1000,
+      getContent: () => ({
+        body: "decrypted edit",
+        msgtype: "m.text",
+      }),
+      getUnsigned: () => ({}),
+      getWireContent: () => ({
+        "m.relates_to": {
+          rel_type: "m.thread",
+          event_id: "$thread",
+        },
+      }),
+    } as unknown as MatrixEvent;
+
+    expect(matrixEventToRaw(event).content["m.relates_to"]).toEqual({
+      rel_type: "m.thread",
+      event_id: "$thread",
+    });
+  });
+
+  it("can serialize original content for inbound trigger filtering", () => {
+    expect(matrixEventToRaw(makeEditedMessageEvent(), { contentMode: "original" })).toEqual({
+      event_id: "$root",
+      sender: "@alice:example.org",
+      type: "m.room.message",
+      origin_server_ts: 1000,
+      content: { body: "original", msgtype: "m.text" },
+      unsigned: {
+        "m.relations": {
+          "m.replace": { event_id: "$edit" },
+        },
+      },
+    });
   });
 });

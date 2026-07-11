@@ -1,23 +1,65 @@
+// Browser tests cover errors plugin behavior.
 import { describe, expect, it } from "vitest";
-import { BrowserValidationError, toBrowserErrorResponse } from "./errors.js";
+import {
+  BROWSER_ERROR_REASONS,
+  BrowserProfileUnavailableError,
+  BrowserTabNotFoundError,
+  parseBrowserErrorPayload,
+  toBrowserErrorResponse,
+} from "./errors.js";
 
-describe("browser error mapping", () => {
-  it("maps blocked browser targets to conflict responses", () => {
-    const err = new Error(
-      "Browser target is unavailable after SSRF policy blocked its navigation.",
+describe("BrowserTabNotFoundError", () => {
+  it("teaches agents that bare numbers are not stable tab targets", () => {
+    const err = new BrowserTabNotFoundError({ input: "2" });
+
+    expect(err.message).toBe(
+      'tab not found: browser tab "2" not found. Numeric values are not tab targets; use a stable tab id like "t1", a label, or a raw targetId. For positional selection, use "openclaw browser tab select 2".',
     );
-    err.name = "BlockedBrowserTargetError";
+  });
+});
 
-    expect(toBrowserErrorResponse(err)).toEqual({
+describe("no-display browser errors", () => {
+  const details = {
+    profile: "openclaw",
+    requestedHeadless: false,
+    headlessSource: "profile",
+    displayPresent: false,
+  } as const;
+
+  it("maps a closed reason and typed details", () => {
+    expect(
+      toBrowserErrorResponse(
+        new BrowserProfileUnavailableError("display required", {
+          metadata: {
+            reason: BROWSER_ERROR_REASONS.noDisplayForHeadedProfile,
+            details,
+          },
+        }),
+      ),
+    ).toEqual({
       status: 409,
-      message: "Browser target is unavailable after SSRF policy blocked its navigation.",
+      message: "display required",
+      reason: BROWSER_ERROR_REASONS.noDisplayForHeadedProfile,
+      details,
     });
   });
 
-  it("preserves BrowserError mappings", () => {
-    expect(toBrowserErrorResponse(new BrowserValidationError("bad input"))).toEqual({
-      status: 400,
-      message: "bad input",
+  it("accepts only valid no-display metadata from route payloads", () => {
+    const payload = {
+      error: "display required",
+      reason: BROWSER_ERROR_REASONS.noDisplayForHeadedProfile,
+      details,
+    };
+    expect(parseBrowserErrorPayload(payload)).toEqual({
+      error: "display required",
+      reason: BROWSER_ERROR_REASONS.noDisplayForHeadedProfile,
+      details,
     });
+    expect(
+      parseBrowserErrorPayload({
+        ...payload,
+        details: { ...details, requestedHeadless: true, remediation: "untrusted" },
+      }),
+    ).toEqual({ error: "display required" });
   });
 });

@@ -1,4 +1,5 @@
-import { normalizeOptionalString } from "../shared/string-coerce.js";
+// Checks whether a requester can read or mutate task-flow records.
+import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import {
   findLatestTaskFlowForOwnerKey,
   getTaskFlowById,
@@ -6,16 +7,16 @@ import {
 } from "./task-flow-registry.js";
 import type { TaskFlowRecord } from "./task-flow-registry.types.js";
 
-function canOwnerAccessFlow(flow: TaskFlowRecord, callerOwnerKey: string): boolean {
-  return normalizeOptionalString(flow.ownerKey) === normalizeOptionalString(callerOwnerKey);
-}
-
+/** Reads a flow only when it belongs to the caller owner key. */
 export function getTaskFlowByIdForOwner(params: {
   flowId: string;
   callerOwnerKey: string;
 }): TaskFlowRecord | undefined {
   const flow = getTaskFlowById(params.flowId);
-  return flow && canOwnerAccessFlow(flow, params.callerOwnerKey) ? flow : undefined;
+  return flow &&
+    normalizeOptionalString(flow.ownerKey) === normalizeOptionalString(params.callerOwnerKey)
+    ? flow
+    : undefined;
 }
 
 export function listTaskFlowsForOwner(params: { callerOwnerKey: string }): TaskFlowRecord[] {

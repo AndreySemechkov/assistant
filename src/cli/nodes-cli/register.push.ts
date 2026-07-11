@@ -1,6 +1,10 @@
+// APNs test-push command for iOS nodes.
+import {
+  normalizeOptionalLowercaseString,
+  normalizeOptionalString,
+} from "@openclaw/normalization-core/string-coerce";
 import type { Command } from "commander";
 import { defaultRuntime } from "../../runtime.js";
-import { normalizeOptionalString } from "../../shared/string-coerce.js";
 import { getNodesTheme, runNodesCommand } from "./cli-utils.js";
 import { callGatewayCli, nodesCallOpts, resolveNodeId } from "./rpc.js";
 import type { NodesRpcOpts } from "./types.js";
@@ -16,13 +20,14 @@ function normalizeEnvironment(value: unknown): "sandbox" | "production" | null {
   if (typeof value !== "string") {
     return null;
   }
-  const normalized = normalizeOptionalString(value)?.toLowerCase();
+  const normalized = normalizeOptionalLowercaseString(value);
   if (normalized === "sandbox" || normalized === "production") {
     return normalized;
   }
   return null;
 }
 
+/** Register the node push-test command. */
 export function registerNodesPushCommand(nodes: Command) {
   nodesCallOpts(
     nodes
@@ -34,9 +39,9 @@ export function registerNodesPushCommand(nodes: Command) {
       .option("--environment <sandbox|production>", "Override APNs environment")
       .action(async (opts: NodesPushOpts) => {
         await runNodesCommand("push", async () => {
-          const nodeId = await resolveNodeId(opts, String(opts.node ?? ""));
-          const title = String(opts.title ?? "").trim() || "OpenClaw";
-          const body = String(opts.body ?? "").trim() || `Push test for node ${nodeId}`;
+          const nodeId = await resolveNodeId(opts, normalizeOptionalString(opts.node) ?? "");
+          const title = normalizeOptionalString(opts.title) || "OpenClaw";
+          const body = normalizeOptionalString(opts.body) || `Push test for node ${nodeId}`;
           const environment = normalizeEnvironment(opts.environment);
           if (opts.environment && !environment) {
             throw new Error("invalid --environment (use sandbox|production)");

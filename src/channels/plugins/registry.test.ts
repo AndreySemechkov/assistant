@@ -1,8 +1,23 @@
-import { afterEach, describe, expect, it } from "vitest";
+// Registry tests cover channel plugin registry installation, lookup, and reset behavior.
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
 import type { PluginRegistry } from "../../plugins/registry.js";
 import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../../plugins/runtime.js";
-import { getChannelPlugin, listChannelPlugins } from "./registry.js";
+import {
+  getChannelPlugin,
+  listChannelPlugins,
+  resolveChannelPluginRegistration,
+} from "./registry.js";
+
+vi.mock("./bundled.js", () => ({
+  getBundledChannelPlugin: (id: string) =>
+    id === "fallback"
+      ? {
+          id: "fallback",
+          meta: { label: "fallback" },
+        }
+      : undefined,
+}));
 
 function withMalformedChannels(registry: PluginRegistry): PluginRegistry {
   const malformed = { ...registry } as PluginRegistry;
@@ -19,16 +34,43 @@ describe("listChannelPlugins", () => {
     const malformedRegistry = withMalformedChannels(createEmptyPluginRegistry());
     setActivePluginRegistry(malformedRegistry);
 
-    expect(listChannelPlugins()).toEqual([]);
+    expect(listChannelPlugins()).toStrictEqual([]);
   });
 
   it("falls back to bundled channel plugins for direct lookups before registry bootstrap", () => {
     setActivePluginRegistry(createEmptyPluginRegistry());
 
-    expect(getChannelPlugin("googlechat")?.doctor).toMatchObject({
-      dmAllowFromMode: "nestedOnly",
-      groupAllowFromFallbackToAllowFrom: false,
-      warnOnEmptyGroupSenderAllowlist: false,
+    expect(getChannelPlugin("fallback")?.meta.label).toBe("fallback");
+    expect(resolveChannelPluginRegistration("fallback")).toMatchObject({
+      origin: "bundled",
+      plugin: {
+        id: "fallback",
+      },
+    });
+  });
+
+  it("does not let a loaded external override inherit bundled fallback provenance", () => {
+    const registry = createEmptyPluginRegistry();
+    registry.channels = [
+      {
+        pluginId: "external-fallback",
+        plugin: {
+          id: "fallback",
+          meta: { label: "external fallback" },
+        } as never,
+        origin: "config",
+        source: "test",
+      },
+    ];
+    setActivePluginRegistry(registry);
+
+    expect(resolveChannelPluginRegistration("fallback")).toMatchObject({
+      origin: "config",
+      plugin: {
+        meta: {
+          label: "external fallback",
+        },
+      },
     });
   });
 

@@ -1,8 +1,13 @@
+// Slack plugin module implements preview finalize behavior.
 import type { Block, KnownBlock, WebClient } from "@slack/web-api";
 import { logVerbose } from "openclaw/plugin-sdk/runtime-env";
 import { editSlackMessage } from "../../actions.js";
-import { buildSlackBlocksFallbackText } from "../../blocks-fallback.js";
+import { buildSlackEditTextPayload } from "../../edit-text.js";
 import { normalizeSlackOutboundText } from "../../format.js";
+import {
+  buildSlackNativeDataFallbackBlocks,
+  hasSlackNativeDataBlock,
+} from "../../native-data-blocks.js";
 
 type SlackReadbackMessage = {
   ts?: string;
@@ -14,14 +19,7 @@ function buildExpectedSlackEditText(params: {
   text: string;
   blocks?: (Block | KnownBlock)[];
 }): string {
-  const trimmed = normalizeSlackOutboundText(params.text.trim());
-  if (trimmed) {
-    return trimmed;
-  }
-  if (params.blocks?.length) {
-    return buildSlackBlocksFallbackText(params.blocks);
-  }
-  return " ";
+  return normalizeSlackOutboundText(buildSlackEditTextPayload(params.text, params.blocks));
 }
 
 function blocksMatch(expected?: (Block | KnownBlock)[], actual?: unknown[]): boolean {
@@ -31,7 +29,17 @@ function blocksMatch(expected?: (Block | KnownBlock)[], actual?: unknown[]): boo
   if (!actual?.length) {
     return false;
   }
-  return JSON.stringify(expected) === JSON.stringify(actual);
+  if (JSON.stringify(expected) === JSON.stringify(actual)) {
+    return true;
+  }
+  if (!hasSlackNativeDataBlock(expected)) {
+    return false;
+  }
+  try {
+    return JSON.stringify(buildSlackNativeDataFallbackBlocks(expected)) === JSON.stringify(actual);
+  } catch {
+    return false;
+  }
 }
 
 async function readSlackMessageAfterEditError(params: {
@@ -112,7 +120,6 @@ export async function finalizeSlackPreviewEdit(params: {
       client: params.client,
       ...(params.blocks?.length ? { blocks: params.blocks } : {}),
     });
-    return;
   } catch (err) {
     try {
       const applied = await didSlackPreviewEditApplyAfterError({
@@ -137,9 +144,10 @@ export async function finalizeSlackPreviewEdit(params: {
   }
 }
 
-export const __testing = {
+export const testing = {
   buildExpectedSlackEditText,
   blocksMatch,
   didSlackPreviewEditApplyAfterError,
   readSlackMessageAfterEditError,
 };
+export { testing as __testing };

@@ -10,12 +10,12 @@ import SwiftUI
 @main
 struct OpenClawApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+    @Environment(\.openWindow) private var openWindow
     @State private var state: AppState
     private static let logger = Logger(subsystem: "ai.openclaw", category: "app")
     private let gatewayManager = GatewayProcessManager.shared
     private let controlChannel = ControlChannel.shared
     private let activityStore = WorkActivityStore.shared
-    private let connectivityCoordinator = GatewayConnectivityCoordinator.shared
     @State private var statusItem: NSStatusItem?
     @State private var isMenuPresented = false
     @State private var isPanelVisible = false
@@ -49,16 +49,25 @@ struct OpenClawApp: App {
                 sendCelebrationTick: self.state.sendCelebrationTick,
                 gatewayStatus: self.gatewayManager.status,
                 animationsEnabled: self.state.iconAnimationsEnabled && !self.isGatewaySleeping,
-                iconState: self.effectiveIconState)
+                iconState: self.effectiveIconState,
+                voiceWakeMeterActive: self.state.voiceWakeMeterActive)
+                .background(SettingsWindowOpenRegistrar())
         }
-        .menuBarExtraStyle(.menu)
         .menuBarExtraAccess(isPresented: self.$isMenuPresented) { item in
+            // SwiftUI can vend a replacement status item during connection churn.
+            // Keep ownership to one item so stale menu bar icons are removed.
+            if let currentStatusItem = self.statusItem {
+                guard currentStatusItem !== item else { return }
+                Self.logger.warning("Replacing stale menu bar status item")
+                NSStatusBar.system.removeStatusItem(currentStatusItem)
+            }
             self.statusItem = item
             MenuSessionsInjector.shared.install(into: item)
             self.applyStatusItemAppearance(paused: self.state.isPaused, sleeping: self.isGatewaySleeping)
             self.installStatusItemMouseHandler(for: item)
             self.updateHoverHUDSuppression()
         }
+        .menuBarExtraStyle(.menu)
         .onChange(of: self.state.isPaused) { _, paused in
             self.applyStatusItemAppearance(paused: paused, sleeping: self.isGatewaySleeping)
             if self.state.connectionMode == .local {
@@ -69,8 +78,16 @@ struct OpenClawApp: App {
         }
         .onChange(of: self.controlChannel.state) { _, _ in
             self.applyStatusItemAppearance(paused: self.state.isPaused, sleeping: self.isGatewaySleeping)
+            if self.controlChannel.state == .connected {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    BrowserProfileImportPrompter.shared.checkAndPromptIfNeeded()
+                }
+            }
         }
         .onChange(of: self.gatewayManager.status) { _, _ in
+            self.applyStatusItemAppearance(paused: self.state.isPaused, sleeping: self.isGatewaySleeping)
+        }
+        .onChange(of: self.state.voiceWakeMeterActive) { _, _ in
             self.applyStatusItemAppearance(paused: self.state.isPaused, sleeping: self.isGatewaySleeping)
         }
         .onChange(of: self.state.connectionMode) { _, mode in
@@ -78,51 +95,66 @@ struct OpenClawApp: App {
             CLIInstallPrompter.shared.checkAndPromptIfNeeded(reason: "connection-mode")
         }
 
-        Settings {
+        Window("OpenClaw Settings", id: SettingsWindowOpener.windowID) {
             SettingsRootView(state: self.state, updater: self.delegate.updaterController)
                 .frame(width: SettingsTab.windowWidth, height: SettingsTab.windowHeight, alignment: .topLeading)
                 .environment(self.tailscaleService)
         }
         .defaultSize(width: SettingsTab.windowWidth, height: SettingsTab.windowHeight)
         .windowResizability(.contentSize)
+        .commands {
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings...") {
+                    self.openWindow(id: SettingsWindowOpener.windowID)
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+            SidebarCommands()
+        }
         .onChange(of: self.isMenuPresented) { _, _ in
             self.updateStatusHighlight()
             self.updateHoverHUDSuppression()
         }
     }
 
-    private func applyStatusItemAppearance(paused: Bool, sleeping: Bool) {
-        self.statusItem?.button?.appearsDisabled = paused || sleeping
+    private func applyStatusItemAppearance(paused _: Bool, sleeping _: Bool) {
+        // Keep the status item actionable even when the Gateway is paused or disconnected.
+        // The SwiftUI label already renders those states; AppKit's disabled appearance can
+        // leak into menu item validation and grey out app-level commands like Settings.
+        self.statusItem?.button?.appearsDisabled = false
+        self.statusItem?.button?.toolTip = self.state.voiceWakeMeterActive
+            ? "OpenClaw - Voice Wake live meter active"
+            : "OpenClaw"
     }
 
     private static func applyAttachOnlyOverrideIfNeeded() {
         let args = CommandLine.arguments
         guard args.contains("--attach-only") || args.contains("--no-launchd") else { return }
-        if let error = GatewayLaunchAgentManager.setLaunchAgentWriteDisabled(true) {
+        if let error = GatewayLaunchAgentManager.applyAttachOnlyRuntimeOverride() {
             Self.logger.error("attach-only flag failed: \(error, privacy: .public)")
             return
-        }
-        Task {
-            _ = await GatewayLaunchAgentManager.set(
-                enabled: false,
-                bundlePath: Bundle.main.bundlePath,
-                port: GatewayEnvironment.gatewayPort())
         }
         Self.logger.info("attach-only flag enabled")
     }
 
     private var isGatewaySleeping: Bool {
-        if self.state.isPaused { return false }
+        if self.state.isPaused {
+            return false
+        }
         switch self.state.connectionMode {
         case .unconfigured:
             return true
         case .remote:
-            if case .connected = self.controlChannel.state { return false }
+            if case .connected = self.controlChannel.state {
+                return false
+            }
             return true
         case .local:
             switch self.gatewayManager.status {
             case .running, .starting, .attachedExisting:
-                if case .connected = self.controlChannel.state { return false }
+                if case .connected = self.controlChannel.state {
+                    return false
+                }
                 return true
             case .failed, .stopped:
                 return true
@@ -133,7 +165,9 @@ struct OpenClawApp: App {
     @MainActor
     private func installStatusItemMouseHandler(for item: NSStatusItem) {
         guard let button = item.button else { return }
-        if button.subviews.contains(where: { $0 is StatusItemMouseHandlerView }) { return }
+        if button.subviews.contains(where: { $0 is StatusItemMouseHandlerView }) {
+            return
+        }
 
         WebChatManager.shared.onPanelVisibilityChanged = { [self] visible in
             self.isPanelVisible = visible
@@ -149,7 +183,7 @@ struct OpenClawApp: App {
         handler.translatesAutoresizingMaskIntoConstraints = false
         handler.onLeftClick = { [self] in
             HoverHUDController.shared.dismiss(reason: "statusItemClick")
-            self.toggleWebChatPanel()
+            self.openDashboardWindow()
         }
         handler.onRightClick = { [self] in
             HoverHUDController.shared.dismiss(reason: "statusItemRightClick")
@@ -173,15 +207,10 @@ struct OpenClawApp: App {
     }
 
     @MainActor
-    private func toggleWebChatPanel() {
+    private func openDashboardWindow() {
         HoverHUDController.shared.setSuppressed(true)
         self.isMenuPresented = false
-        Task { @MainActor in
-            let sessionKey = await WebChatManager.shared.preferredSessionKey()
-            WebChatManager.shared.togglePanel(
-                sessionKey: sessionKey,
-                anchorProvider: { [self] in self.statusButtonScreenFrame() })
-        }
+        AppNavigationActions.openDashboard()
     }
 
     @MainActor
@@ -240,11 +269,97 @@ private final class StatusItemMouseHandlerView: NSView {
     }
 }
 
+private struct SettingsWindowOpenRegistrar: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onAppear {
+                let openWindow = self.openWindow
+                SettingsWindowOpener.shared.register {
+                    openWindow(id: SettingsWindowOpener.windowID)
+                }
+            }
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let dashboardURL = URL(string: "openclaw://dashboard")!
     private var state: AppState?
+    private var terminationCleanupTask: Task<Void, Never>?
+    private var terminationDeadlineTask: Task<Void, Never>?
+    private var terminationCleanupFinished = false
     private let webChatAutoLogger = Logger(subsystem: "ai.openclaw", category: "Chat")
+    var nodeTerminationCleanup: @MainActor () async -> Void = {
+        await TalkMLXSpeechSynthesizer.shared.shutdown()
+        await MacNodeModeCoordinator.shared.stopAndWait()
+    }
+
+    var waitForTerminationCleanupDeadline: @MainActor () async -> Void = {
+        try? await Task.sleep(for: .seconds(AppTerminationTiming.cleanupDeadlineSeconds))
+    }
+
+    var applicationTerminationReply: @MainActor (NSApplication, Bool) -> Void = { app, allow in
+        app.reply(toApplicationShouldTerminate: allow)
+    }
+
+    var openDashboardAction: @MainActor () -> Void = { AppNavigationActions.openDashboard() }
     let updaterController: UpdaterProviding = makeUpdaterController()
+
+    func applicationDockMenu(_: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        menu.addItem(self.dockMenuItem(
+            title: "Open Dashboard",
+            systemImage: "gauge",
+            action: #selector(self.openDashboardFromDockMenu(_:))))
+        menu.addItem(self.dockMenuItem(
+            title: "Open Chat",
+            systemImage: "bubble.left.and.bubble.right",
+            action: #selector(self.openChatFromDockMenu(_:))))
+        let canvasTitle = AppStateStore.shared.canvasPanelVisible ? "Close Canvas" : "Open Canvas"
+        let canvasItem = self.dockMenuItem(
+            title: canvasTitle,
+            systemImage: "rectangle.inset.filled.on.rectangle",
+            action: #selector(self.toggleCanvasFromDockMenu(_:)))
+        canvasItem.isEnabled = AppStateStore.shared.canvasEnabled
+        menu.addItem(canvasItem)
+        menu.addItem(.separator())
+        menu.addItem(self.dockMenuItem(
+            title: "Settings…",
+            systemImage: "gearshape",
+            action: #selector(self.openSettingsFromDockMenu(_:))))
+        return menu
+    }
+
+    private func dockMenuItem(title: String, systemImage: String, action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        item.image = NSImage(systemSymbolName: systemImage, accessibilityDescription: title)
+        return item
+    }
+
+    @objc
+    private func openDashboardFromDockMenu(_: Any?) {
+        self.openDashboardAction()
+    }
+
+    @objc
+    private func openChatFromDockMenu(_: Any?) {
+        AppNavigationActions.openChat()
+    }
+
+    @objc
+    private func toggleCanvasFromDockMenu(_: Any?) {
+        AppNavigationActions.toggleCanvas()
+    }
+
+    @objc
+    private func openSettingsFromDockMenu(_: Any?) {
+        AppNavigationActions.openSettings()
+    }
 
     func application(_: NSApplication, open urls: [URL]) {
         Task { @MainActor in
@@ -254,16 +369,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if flag {
+            return true
+        }
+        self.openDashboardAction()
+        return false
+    }
+
     @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
         if self.isDuplicateInstance() {
+            NSWorkspace.shared.open(Self.dashboardURL)
             NSApp.terminate(nil)
             return
         }
+        // Remote startup can spawn an SSH child. Admit tunnel work only after the
+        // singleton check so a short-lived handoff process cannot orphan that child.
+        GatewayEndpointStore.admitPrimaryAppLaunch()
+        GatewayConnectivityCoordinator.shared.start()
         self.state = AppStateStore.shared
+        if let state {
+            MacNodeModeCoordinator.prepareNodeIdentityProfile(
+                isExistingInstallation: state.onboardingSeen || state.connectionMode != .unconfigured)
+        }
         AppActivationPolicy.apply(showDockIcon: self.state?.showDockIcon ?? false)
         if let state {
-            Task { await ConnectionModeCoordinator.shared.apply(mode: state.connectionMode, paused: state.isPaused) }
+            let shouldWaitForConnection = state.connectionMode != .unconfigured
+            if !shouldWaitForConnection {
+                Task { @MainActor in
+                    await self.scheduleFirstRunOnboardingIfNeeded(gatewayConnected: false)
+                }
+            }
+            Task { @MainActor in
+                // Validate PATH selection before local startup. Existing installs may not
+                // have the validation cache yet, and a stale external CLI must not win.
+                if state.connectionMode == .local {
+                    _ = await CLIInstaller.status()
+                }
+                await ConnectionModeCoordinator.shared.apply(
+                    mode: state.connectionMode,
+                    paused: state.isPaused)
+                guard shouldWaitForConnection else { return }
+                await self.scheduleFirstRunOnboardingIfNeeded(
+                    gatewayConnected: ControlChannel.shared.state == .connected)
+            }
         }
         TerminationSignalWatcher.shared.start()
         NodePairingApprovalPrompter.shared.start()
@@ -276,17 +426,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { await HealthStore.shared.refresh(onDemand: true) }
         Task { await PortGuardian.shared.sweep(mode: AppStateStore.shared.connectionMode) }
         Task { await PeekabooBridgeHostCoordinator.shared.setEnabled(AppStateStore.shared.peekabooBridgeEnabled) }
-        self.scheduleFirstRunOnboardingIfNeeded()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             CLIInstallPrompter.shared.checkAndPromptIfNeeded(reason: "launch")
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+            BrowserProfileImportPrompter.shared.checkAndPromptIfNeeded()
+        }
 
+        #if DEBUG
+        // Screenshot/demo helper: show the pairing panel with sample requests.
+        if ProcessInfo.processInfo.environment["OPENCLAW_DEBUG_PAIRING_DEMO"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                DebugActions.showPairingPanelDemo()
+            }
+        }
+        #endif
         // Developer/testing helper: auto-open chat when launched with --chat (or legacy --webchat).
         if CommandLine.arguments.contains("--chat") || CommandLine.arguments.contains("--webchat") {
             self.webChatAutoLogger.debug("Auto-opening chat via CLI flag")
             Task { @MainActor in
                 let sessionKey = await WebChatManager.shared.preferredSessionKey()
                 WebChatManager.shared.show(sessionKey: sessionKey)
+            }
+        }
+        if CommandLine.arguments.contains("--dashboard") {
+            self.webChatAutoLogger.info("Auto-opening dashboard via CLI flag")
+            Task { @MainActor in
+                if DashboardManager.shared.showConfiguredWindowIfPossible() {
+                    return
+                }
+                do {
+                    try await DashboardManager.shared.show()
+                } catch {
+                    DashboardManager.shared.showFailure(error)
+                }
             }
         }
     }
@@ -300,6 +473,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MacNodeModeCoordinator.shared.stop()
         TerminationSignalWatcher.shared.stop()
         VoiceWakeGlobalSettingsSync.shared.stop()
+        DashboardManager.shared.close()
         WebChatManager.shared.close()
         WebChatManager.shared.resetTunnels()
         Task { await RemoteTunnelManager.shared.stopAll() }
@@ -307,10 +481,88 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { await PeekabooBridgeHostCoordinator.shared.stop() }
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if self.terminationCleanupFinished {
+            return .terminateNow
+        }
+        guard self.terminationCleanupTask == nil else {
+            return .terminateLater
+        }
+        let cleanup = self.nodeTerminationCleanup
+        self.terminationCleanupTask = Task { @MainActor [weak self] in
+            await cleanup()
+            self?.finishTerminationCleanup(for: sender)
+        }
+        let waitForDeadline = self.waitForTerminationCleanupDeadline
+        self.terminationDeadlineTask = Task { @MainActor [weak self] in
+            await waitForDeadline()
+            guard !Task.isCancelled else { return }
+            self?.finishTerminationCleanup(for: sender)
+        }
+        return .terminateLater
+    }
+
+    private func finishTerminationCleanup(for sender: NSApplication) {
+        guard !self.terminationCleanupFinished else { return }
+        // Cleanup may ignore cancellation while transport or input teardown is stuck.
+        // The deadline replies without awaiting that loser; this gate keeps the reply single.
+        self.terminationCleanupFinished = true
+        self.terminationCleanupTask?.cancel()
+        self.terminationDeadlineTask?.cancel()
+        self.terminationCleanupTask = nil
+        self.terminationDeadlineTask = nil
+        self.applicationTerminationReply(sender, true)
+    }
+
     @MainActor
-    private func scheduleFirstRunOnboardingIfNeeded() {
+    static func shouldOpenDashboardInsteadOfOnboarding(
+        connectionMode: AppState.ConnectionMode,
+        onboardingSeen: Bool,
+        hasStoredConnectionMode: Bool,
+        gatewayConnected: Bool,
+        configuredInferenceModel: String?) -> Bool
+    {
+        let model = configuredInferenceModel?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return connectionMode != .unconfigured &&
+            !onboardingSeen &&
+            !hasStoredConnectionMode &&
+            gatewayConnected &&
+            model?.isEmpty == false
+    }
+
+    private func scheduleFirstRunOnboardingIfNeeded(gatewayConnected: Bool) async {
+        let connectionMode = AppStateStore.shared.connectionMode
+        let onboardingSeen = AppStateStore.shared.onboardingSeen
+        // A stored app mode means onboarding already selected a Gateway; reconnecting
+        // must not turn an interrupted first-run flow into a completed installation.
+        let hasStoredConnectionMode = UserDefaults.standard.object(forKey: connectionModeKey) != nil
+        var configuredInferenceModel: String?
+        if connectionMode != .unconfigured,
+           !onboardingSeen,
+           !hasStoredConnectionMode,
+           gatewayConnected,
+           let route = await GatewayConnection.shared.captureRoute()
+        {
+            // Bind inference discovery to the connected route. A socket without a
+            // default-agent model cannot run Crestodian and must stay in onboarding.
+            configuredInferenceModel = try? await GatewayConnection.shared.configuredInferenceModel(
+                ifCurrentRoute: route)
+        }
+        let shouldOpenDashboard = Self.shouldOpenDashboardInsteadOfOnboarding(
+            connectionMode: connectionMode,
+            onboardingSeen: onboardingSeen,
+            hasStoredConnectionMode: hasStoredConnectionMode,
+            gatewayConnected: gatewayConnected,
+            configuredInferenceModel: configuredInferenceModel)
+        if connectionMode != .unconfigured, onboardingSeen || shouldOpenDashboard {
+            OnboardingController.markComplete()
+            if shouldOpenDashboard {
+                self.openDashboardAction()
+            }
+            return
+        }
         let seenVersion = UserDefaults.standard.integer(forKey: onboardingVersionKey)
-        let shouldShow = seenVersion < currentOnboardingVersion || !AppStateStore.shared.onboardingSeen
+        let shouldShow = seenVersion < currentOnboardingVersion || !onboardingSeen
         guard shouldShow else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             OnboardingController.shared.show()
