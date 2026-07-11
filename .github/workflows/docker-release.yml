@@ -49,6 +49,9 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            OPENCLAW_DOCKER_APT_PACKAGES=chromium
+            OPENCLAW_INSTALL_BROWSER=1
           tags: docker.io/${{ env.DOCKERHUB_IMAGE }}:${{ steps.image.outputs.tag }}
           cache-from: type=gha,scope=homelab-docker
           cache-to: type=gha,mode=max,scope=homelab-docker
