@@ -1,7 +1,7 @@
 services:
   openclaw-gateway:
     image: ${OPENCLAW_IMAGE:-openclaw:v5}
-    pull_policy: never
+    pull_policy: always
     build: .
     env_file:
       - path: .env
@@ -120,7 +120,7 @@ services:
 
   openclaw-cli:
     image: ${OPENCLAW_IMAGE:-openclaw:v5}
-    pull_policy: never
+    pull_policy: always
     network_mode: "service:openclaw-gateway"
     env_file:
       - path: .env
