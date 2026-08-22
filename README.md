@@ -30,6 +30,22 @@ OpenClaw Onboard guides you step by step through setting up the gateway, workspa
 Windows desktop users can start with the native [Windows Hub](https://docs.openclaw.ai/platforms/windows) companion app for setup, tray status, chat, node mode, and local MCP mode.
 Works with npm, pnpm, or bun.
 
+## Docker: repair an outdated Codex plugin
+
+If an OpenAI model reports that it requires a newer version of Codex, update the
+installed Codex plugin inside the running Gateway, then restart the service. The
+plugin has its own Codex runtime; updating a globally installed `codex` binary
+alone does not update it.
+
+```bash
+docker exec <gateway-container> \
+  node dist/index.js plugins update @openclaw/codex
+docker compose restart openclaw-gateway
+```
+
+For this Compose setup, the gateway container is normally
+`assistant-openclaw-gateway-1`.
+
 ## Sponsors
 
 <table>
