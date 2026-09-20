@@ -172,12 +172,17 @@ RUN NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.co
 ENV PATH="/home/linuxbrew/.linuxbrew/bin:${PATH}"
 
 # Install Rust and required libraries via Homebrew.
-RUN brew install rust alsa-lib dbus whisper-cpp gogcli spotify_player
+RUN brew install rust alsa-lib dbus whisper-cpp gogcli spotify_player && \
+    brew install --cask 1password-cli
 
 ENV PKG_CONFIG_PATH="/home/linuxbrew/.linuxbrew/lib/pkgconfig:${PKG_CONFIG_PATH}"
 
 USER root
 WORKDIR /app
+
+# Keep 1Password CLI on the standard system path for login shells, which can
+# replace the image's Homebrew-prefixed PATH while launching agent commands.
+RUN ln -sf /home/linuxbrew/.linuxbrew/bin/op /usr/local/bin/op
 
 RUN chown node:node /app
 
