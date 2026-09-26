@@ -371,21 +371,8 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
       chown -R node:node "$PLAYWRIGHT_BROWSERS_PATH"; \
     fi
 
-# Keep the locally configured CLI tools available in the runtime image.
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      build-essential file sudo && \
-    useradd -m -s /bin/bash linuxbrew && \
-    echo 'linuxbrew ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
-USER linuxbrew
-WORKDIR /home/linuxbrew
-RUN NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && \
-    /home/linuxbrew/.linuxbrew/bin/brew install --cask 1password-cli
-USER root
-WORKDIR /app
-ENV PATH="/home/linuxbrew/.linuxbrew/bin:${PATH}"
-RUN ln -sf /home/linuxbrew/.linuxbrew/bin/op /usr/local/bin/op && \
-    npm install -g @openai/codex@0.144.5
+# Keep Codex CLI available in the runtime image for local CLI-backend usage.
+RUN npm install -g @openai/codex@0.144.5
 
 # Optionally install Docker CLI for sandbox container management.
 # Build with: docker build --build-arg OPENCLAW_INSTALL_DOCKER_CLI=1 ...
