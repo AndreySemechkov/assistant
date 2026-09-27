@@ -75,16 +75,16 @@ services:
       - "${OPENCLAW_MSTEAMS_PORT:-3978}:3978"
     init: true
     restart: unless-stopped
-    # A hard container stop can leave the approvals lock behind. Because the
-    # gateway is the only long-running owner and has not started yet here, the
-    # lock cannot be live; removing it prevents PID reuse from making OpenClaw
-    # reject cron runs with an effective tools.exec.mode=deny policy.
+    # Keep this as a direct Gateway invocation. The image entrypoint recognizes
+    # it and runs state repair before the Gateway starts after an image update.
     command:
-      - "sh"
-      - "-lc"
-      - >-
-        rm -f /home/node/.openclaw/exec-approvals.json.lock &&
-        exec node dist/index.js gateway --bind ${OPENCLAW_GATEWAY_BIND:-lan} --port 18789
+      - "node"
+      - "openclaw.mjs"
+      - "gateway"
+      - "--bind"
+      - "${OPENCLAW_GATEWAY_BIND:-lan}"
+      - "--port"
+      - "18789"
     healthcheck:
       test:
         [
@@ -96,7 +96,9 @@ services:
       interval: 30s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      # Startup repair can safely migrate a retained state volume before the
+      # Gateway is ready to serve traffic.
+      start_period: 90s
 
   homeassistant:
     image: homeassistant/home-assistant:stable

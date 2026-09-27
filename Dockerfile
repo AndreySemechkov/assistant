@@ -456,7 +456,7 @@ RUN COREPACK_ENABLE_NETWORK=0 PNPM_CONFIG_OFFLINE=true pnpm --version
 #     and GET /readyz (channel-aware readiness)
 #   - aliases: /health, /startup, and /ready
 # For external access from host/ingress, override bind to "lan" and set auth.
-HEALTHCHECK --interval=3m --timeout=10s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=3m --timeout=10s --start-period=90s --retries=3 \
   CMD ["node", "dist/docker-healthcheck.js"]
 ENTRYPOINT ["tini", "-s", "--", "node", "/app/docker-entrypoint.mjs"]
 CMD ["node", "openclaw.mjs", "gateway"]

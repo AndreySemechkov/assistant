@@ -233,6 +233,11 @@ maintenance ownership before starting the Gateway. This covers the default image
 command and Compose's foreground Gateway command, including its selected profile.
 Routine image upgrades do not require a separate Doctor pass.
 
+Keep a Compose Gateway command in direct exec form, such as
+`node openclaw.mjs gateway ...`. A `sh -lc` wrapper prevents the image
+entrypoint from recognizing the Gateway invocation and skips this activation
+repair.
+
 On older Linux hosts such as Synology DSM, an unavailable `openat2` syscall can
 make older images report that another Gateway owns even an empty state volume.
 Current images use the guarded filesystem fallback; keep native filesystem
